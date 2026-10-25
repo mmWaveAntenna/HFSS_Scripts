@@ -1,15 +1,11 @@
 # -*- coding: utf-8 -*-
-"""TRL + кольцевой резонатор с коаксиальными разъемами (v2.5.4).
+"""TRL + кольцевой резонатор с коаксиальными разъемами (v2.5.6).
 
 Исправления:
-* Восстановлена полная параметризация: L_line, r_mean, r_out, r_in,
-  r_tab_in, r_tab_out, y_top_res, x_thru, x_line, x_open, x_res
-  заданы через HFSS-выражения (зависят от f0_GHz, pitch_trl, pitch_res).
-* Для геометрии используются HFSS-выражения (x_expr), для портов
-  (integration_line) и числовых проверок — Python-числа (x_num).
-* Ручные PEC-крышки (кольцо) для глушения излучения.
-* Убраны явные assign_perfecte_to_sheets (HFSS назначает неявно).
-* Взаимное вычитание сигнальных и земляных объектов.
+* Полностью удален объект Pad (прямоугольная контактная площадка).
+* Удалена переменная pad_origin_y.
+* Сигнальные линии объединяются напрямую с пинами (Pin).
+* Из возвращаемого кортежа draw_coax_and_port убран pad.name.
 """
 
 import math
@@ -70,7 +66,7 @@ r_outer     = 1.85 / 2.0
 L_coax_mm   = 150.0 / f0_ghz
 pin_z_overlap = 0.008
 
-# --- Python-предвычисления (только для портов и z_coax, где API требует числа) ---
+# --- Python-предвычисления (только для портов и z_coax) ---
 L_thru_val    = L_thru_mm
 eps_eff_val   = (er_val + 1)/2 + (er_val - 1)/2/math.sqrt(1 + 12*h_mm/W_mm)
 dL_val        = 75.0 / (f0_ghz * math.sqrt(eps_eff_val))
@@ -149,10 +145,10 @@ hfss["r_diel"]     = "{}mm".format(r_diel)
 hfss["r_pin_coax"] = "{}mm".format(r_pin_coax)
 hfss["L_coax"]     = "{}mm".format(L_coax_mm)
 
-# Z-координата центра коаксиала (число, не должно меняться)
+# Z-координата центра коаксиала
 hfss["z_coax"] = "h + t_cu - {}mm + r_pin_coax".format(pin_z_overlap)
 
-# Зависимые длины (HFSS-выражения — параметризованы!)
+# Зависимые длины (HFSS-выражения)
 hfss["L_ref"]  = "L_thru/2"
 hfss["L_feed"] = "L_thru/2"
 
@@ -168,7 +164,7 @@ hfss["r_tab_in"]  = "r_out + gap_couple"
 hfss["r_tab_out"] = "r_tab_in + R_tab"
 hfss["y_top_res"] = "r_tab_out + L_feed"
 
-# Координаты структур по X (параметризованы!)
+# Координаты структур по X
 hfss["x_thru"]  = "-pitch_trl"
 hfss["x_line"]  = "0mm"
 hfss["x_open"]  = "pitch_trl"
@@ -295,14 +291,13 @@ hfss.modeler.unite([tabs_final, "FEED_TOP", "FEED_BOT"])
 
 
 # ================================================================
-# 6. Коаксиальные разъемы, стенка, PEC-крышки
+# 6. Коаксиальные разъемы, стенка, PEC-крышки (без Pad)
 # ================================================================
 def draw_coax_and_port(name, line_name, x_expr, x_num, y_edge_expr, y_edge_num, direction):
     if direction < 0:
         y_line_edge_expr = "({}) + gap_foil".format(y_edge_expr)
         pin_origin_y = "({}) - L_coax".format(y_edge_expr)
         pin_height = "L_coax + gap_foil + 1mm"
-        pad_origin_y = y_line_edge_expr
         coax_origin_y = "({}) - L_coax".format(y_edge_expr)
         y_outer_expr = "({}) - L_coax".format(y_edge_expr)
         
@@ -313,7 +308,6 @@ def draw_coax_and_port(name, line_name, x_expr, x_num, y_edge_expr, y_edge_num, 
         y_line_edge_expr = "({}) - gap_foil".format(y_edge_expr)
         pin_origin_y = "({}) - 1mm".format(y_line_edge_expr)
         pin_height = "L_coax + gap_foil + 1mm"
-        pad_origin_y = "({}) - (conn_ext + 1mm - gap_foil)".format(y_line_edge_expr)
         coax_origin_y = y_edge_expr
         y_outer_expr = "({}) + L_coax".format(y_edge_expr)
         
@@ -355,13 +349,7 @@ def draw_coax_and_port(name, line_name, x_expr, x_num, y_edge_expr, y_edge_num, 
         sizes=["leg_width", leg_y_size, "leg_height"],
         name="Leg_{}_R".format(name), material="copper")
 
-    # 7. Пад на ПП
-    pad = hfss.modeler.create_box(
-        origin=["({}) - W/2".format(x_expr), pad_origin_y, "h"], 
-        sizes=["W", "conn_ext + 1mm - gap_foil", "t_cu"], 
-        name="Pad_{}".format(name), material="copper")
-    
-    # 8. Wave Port на диэлектрике
+    # 7. Wave Port на диэлектрике
     port_y_num = y_edge_num + direction * L_coax_mm
     port_sheet = hfss.modeler.create_circle(orientation="XZ", origin=[x_expr, y_outer_expr, "z_coax"], radius=r_diel, name="PortSheet_{}".format(name))
     
@@ -371,10 +359,10 @@ def draw_coax_and_port(name, line_name, x_expr, x_num, y_edge_expr, y_edge_num, 
         assignment=port_sheet.name,
         integration_line=[[x_num, port_y_num, z_coax_num], [x_num, port_y_num, z_coax_num + r_diel]],
         name="P_{}".format(name),
-        renormalize=True
+        renormalize=False
     )
     
-    return pin.name, cap.name, coax_diel.name, coax_outer.name, wall.name, leg_L.name, leg_R.name, pad.name
+    return pin.name, cap.name, coax_diel.name, coax_outer.name, wall.name, leg_L.name, leg_R.name
 
 # --- Создание всех разъемов ---
 p1_thru = draw_coax_and_port("THRU_1", "THRU_Line", "x_thru", x_thru_val, "-L_thru/2 - conn_ext", -L_thru_val/2 - conn_pin_offset, -1)
@@ -396,7 +384,7 @@ p2_res = draw_coax_and_port("RES_2", tabs_final, "x_res", x_res_val, "y_top_res 
 # 1. Объединение всех сигнальных объектов
 sig_parts = ["THRU_Line", "LINE_Line", "OPEN_A_Line", "OPEN_B_Line", tabs_final]
 for p in [p1_thru, p2_thru, p1_line, p2_line, p_open_a, p_open_b, p1_res, p2_res]:
-    sig_parts.extend([p[0], p[7]]) # Pin, Pad
+    sig_parts.extend([p[0]]) # Только Pin (индекс 0)
 
 res_sig = hfss.modeler.unite(sig_parts)
 sig_name = res_sig if isinstance(res_sig, str) else sig_parts[0]
@@ -440,7 +428,7 @@ sweep.props["RangeEnd"] = "6GHz"
 sweep.props["RangeCount"] = 101
 
 hfss.save_project()
-print("\nПроект сохранён (v2.5.4). Все переменные параметризованы.")
+print("\nПроект сохранён (v2.5.6). Объект Pad удален, линии объединяются напрямую с пинами.")
 
 
 # === hfss_trl_kit.py ===
