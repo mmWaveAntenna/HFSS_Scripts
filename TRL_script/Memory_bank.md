@@ -1,20 +1,22 @@
 # Memory Bank — TRL + кольцевой резонатор на FR4 для HFSS 2025
 
 ## Состояние проекта
-- Версия: 3.5.6
+- Версия: 3.6.1
 - Готово:
   - `hfss_trl_kit.py` — единый скрипт-генератор проекта `TRL_Calibration_FR4_Param` / `TRL_Kit`:
     - 3 TRL-стандарта (THRU, LINE, OPEN_A, OPEN_B) с зависимыми длинами;
     - кольцевой резонатор с TAB из кольца-заготовки;
-    - 8 портов: **Wave Port на грани PEC-стенки** (face ID), не на листе;
-    - PEC-стенка снаружи торца линии с нахлёстом 5 мкм, `unite` с линией, `subtract` из `GND_BOT`;
-    - **Open Region** с padding `±X=15, ±Y=0.5, +Z=15, -Z=0` (PEC-стенка внутри Region);
-    - параметры под 10 ГГц: `h=0.93`, `W=1.7`, FR4 (`εr=4.4`, `tanδ=0.02`);
+    - **8 параметризованных sheet-портов** (HFSS-выражения в `origin`, `sizes`, `IntLine`);
+    - размер порта **4W × 3h = 6.8 × 2.79 мм** — без высших мод (отсечка TE₁₀ 12.2 ГГц > 10 ГГц);
+    - **PEC-cap** (3D box `pec`) вплотную к порту (`port_gap = 0`);
+    - `subtract(PEC_cap, GND_BOT)` для гальванической задней стенки;
+    - **`sizes=["port_h", "port_w"]`** в `create_rectangle(orientation="XZ")` (порядок Z, X);
+    - **Open Region** с `pad_value=["15mm","15mm","0.5mm","0.5mm","15mm","0mm"]`;
+    - параметры под 10 ГГц: `h=0.93`, `W=1.7`, FR4;
     - ring/TAB: `W_ring=0.4`, `R_tab=0.4`, `W_tab=1.7`, `gap_couple=0.2`;
-    - `pitch_trl=25`, `pitch_res=25`;
-    - диагностический `print` для каждой грани (`[debug] face N: y=..., dy=...`).
-  - `DEV_LOG.md` — DL-01 … DL-54 + приложение.
-- В работе: финальная верификация v3.5.6 (`Validation Check` + `Analyze`).
+    - `pitch_trl=25`, `pitch_res=25`.
+  - `DEV_LOG.md` — DL-01 … DL-57 + приложение.
+- В работе: финальная проверка v3.6.1 (`Validation Check` + `Analyze` 1 проход).
 - Не начато:
   - Автоэкспорт `.s2p` после Analyze.
   - Optimetrics-свип при фиксированном `L_thru`.
@@ -23,54 +25,56 @@
 ## Файлы и их роли
 | Файл | Роль | Статус |
 |---|---|---|
-| `hfss_trl_kit.py` | единый генератор проекта | ✅ v3.5.6 |
+| `hfss_trl_kit.py` | единый генератор проекта | ✅ v3.6.1 |
 | `DEV_LOG.md` | журнал ошибок и уроков | ✅ |
 | `memory_bank.md` | сводка состояния | ✅ |
 
 ## Ключевые решения
-- **Разъёмы удалены (DL-50).** Модель содержит только плату (подложка + земля + линии + резонатор) и 8 микрополосковых портов.
-- **Параметризация:**
-  - **HFSS-выражения** для геометрии: `L_line`, `r_mean`, `r_out`, `r_in`, `r_tab_in`, `r_tab_out`, `y_top_res`, `x_thru`, `x_line`, `x_open`, `x_res`, `x_left`, `x_right`, `sub_w`, `y_top`, `sub_l`.
-  - **Python-числа** для портов: `x_thru_val`, `x_line_val`, … и `integration_line` (API требует `float`).
-- **Порты (v3.5.x):**
-  - **PEC-стенка** `PEC_Wall_{name}` — сплошной box `pec` толщиной `t_cap=t_cu`, снаружи торца линии.
-  - Линия утоплена в PEC на `line_overlap=0.005 мм` (5 мкм) — гарантия слияния при `unite`.
-  - **`subtract(gnd_bot_name, PEC_Wall, keep_originals=True)`** — вычитание PEC из объединённой земли (устранение пересечения в `z ∈ [−t_cu, 0]`).
-  - **`unite(line, PEC_Wall)`** — единый объект.
-  - **Поиск грани:** `find_face_at_y` через `oeditor.GetFaceIDs` + `GetFaceCenter` (парсинг `str/list/tuple`, авто-конверсия СИ↔мм, fallback через `GetFaceVertexPositions`).
-  - **Wave Port на грань** — `hfss.oboundary.AssignWavePort(props)` с `Objects:=[], Faces:=[int(face_id)]`. Fallback — `oeditor.AssignWavePort`.
-  - `renormalize=False`.
-- **Размеры:** `port_w = 10W = 17 мм`, `port_h = 8h = 7.44 мм`. Порт на грани PEC-стенки (внутри Region).
-- **Region:** `pad_value=["15mm", "15mm", "0.5mm", "0.5mm", "15mm", "0mm"]`. PEC-стенка внутри Region.
-- **Граничные условия:** явные `assign_perfecte_to_sheets` не нужны — HFSS назначает неявно для меди. `Rad_Region` на Region.
+- **Порты полностью параметризованы (DL-55):** все координаты sheet и `IntLine` — HFSS-выражения (`"x_thru"`, `"-L_thru/2"`, `"h"`, `"0mm"`). При изменении `pitch_trl`, `L_thru`, `L_line`, `y_top_res` в `Design Properties` порты сдвигаются вместе с моделью.
+- **Размер порта (DL-55):** `4W × 3h = 6.8 × 2.79 мм` (< λ₀/2 = 15 мм) — без высших мод (TE₁₀ отсечка 12.2 ГГц > 10 ГГц).
+- **Порядок `sizes` в `create_rectangle(orientation="XZ")` (DL-56):** `[ZSize, XSize]`, т.е. `["port_h", "port_w"]`.
+- **PEC-cap вплотную к порту (DL-57):** `port_gap = 0`. При `port_gap > 0` между портом и стенкой остаётся вакуумная «мёртвая зона», волна не возбуждается.
+- **`subtract(PEC_cap, GND_BOT)`** — устранение пересечения PEC-стенки и `GND_BOT` в `z ∈ [−t_cu, 0]`.
+- **PEC-cap — 3D box (`pec`), не sheet.** Гальваническая задняя стенка порта.
+- **Open Region:** `pad_value=["15mm","15mm","0.5mm","0.5mm","15mm","0mm"]`. Padding `0.5 мм` на ±Y — место под PEC-стенку (внутри Region). `0` на −Z — земля на границе.
+- **Параметризация HFSS-переменных:**
+  - **HFSS-выражения** для геометрии: `L_line`, `r_mean`, `r_out`, `r_in`, `r_tab_in`, `r_tab_out`, `y_top_res`, `x_thru`, `x_line`, `x_open`, `x_res`, `x_left`, `x_right`, `sub_w`, `y_top`, `sub_l`, `port_w`, `port_h`, `t_cap`, `port_gap`.
+  - **Python-числа** для `integration_line`-резерва и внутренних проверок.
+- **`AssignWavePort(props)` вместо `wave_port()` (DL-53):** `hfss.oboundary.AssignWavePort(props)` с `Objects:=[sheet.name]`. `hfss.wave_port()` не используется, т.к. в 1.8.0 неправильно обрабатывает `IntLine` с выражениями.
+- **`IntLine` — HFSS-выражения:** `Start=["x_thru", "-L_thru/2", "h"]`, `End=["x_thru", "-L_thru/2", "0mm"]`.
+- **`renormalize=False`** — сохранение физического импеданса.
+- **Топология:** подложка + нижняя земля — union ступенчатых блоков + мостики. GND повторяет контур подложки.
 
 ## Совместимость (PyAEDT 1.8.0 / 1.10 / AEDT 2025.1)
 - `Hfss(project=, design=, new_desktop=)`
 - Примитивы: `origin`, `sizes`; `create_cylinder`: `origin`, `radius`, `height`.
 - `hfss.get_evaluated_value(name)` — чтение вычисленных значений.
-- `integration_line` — только числа (`float`).
-- **Wave Port на грань:** только через `hfss.oboundary.AssignWavePort(props)` (не `hfss.wave_port` — тот кладёт face_id в `Objects`).
-- **Поиск граней:** только `hfss.modeler.oeditor.GetFaceIDs` / `GetFaceCenter` (в PyAEDT 1.8.0 нет `obj.face_centers` и `modeler.get_face_ids`).
+- **`create_rectangle(orientation="XZ", sizes=[ZSize, XSize])`** — порядок `[Z, X]` (DL-56).
+- **`hfss.oboundary.AssignWavePort(props)`** — единственный рабочий способ назначить порт на sheet с `IntLine`-выражениями.
+- **`IntLine` в `AssignWavePort`** — строки-выражения HFSS (`"x_thru"`, `"h"`, `"0mm"`), а не числа.
 - Запуск: `Automation → Run PyAEDT Script` или внешний CPython.
 
 ## Известные ограничения
-- **`integration_line`** — числа. При изменении `pitch_trl`, `pitch_res`, `L_thru`, `L_line` или `y_top_res` в `Design Properties` порты **не сдвинутся** автоматически.
-- **`deembed`** — число. При изменении `L_thru` перезапуск обязателен.
-- **`GetFaceCenter`** — формат и единицы зависят от версии. Авто-конверсия в `_get_face_y` покрывает оба варианта, но при экзотическом формате возможен `warn`.
-- **Нет модели разъёмов** — S-параметры идеальные.
-- **FR4 без дисперсии.**
-- **Кольцо — $n=1$.**
+- **`port_gap = 0`** — обязательно. Иначе `Analyze` не возбуждает моду (DL-57).
+- **PEC-cap — отдельный объект** (не `unite` с линией). Гальванический контакт — через `subtract(PEC_cap, GND_BOT)` и физическое касание в плоскости порта.
+- **При изменении `W` или `h`** — порты (`port_w`, `port_h`) пересчитываются автоматически (HFSS-выражения), но `x_margin_mm` (для габаритов подложки) — Python-число, требует перезапуска.
+- **`deembed`** — число (не реализован в v3.6.1). При изменении `L_thru` — перезапуск.
+- **FR4 без дисперсии.** Для $f > 5$ ГГц — Wideband Debye.
+- **Кольцо — $n=1$.** Для $n=2$ на 10 ГГц: $f_2 \approx 20$ ГГц.
 
 ## TODO / backlog
-- [ ] Проверить v3.5.6 (`Validation Check` + `Analyze` 1 проход).
+- [ ] Проверить v3.6.1: `Validation Check` + `Analyze` (1 проход).
+- [ ] Проверить, что при смене `pitch_trl` / `L_thru` / `L_line` / `y_top_res` порты сдвигаются.
+- [ ] Проверить, что нет высших мод (S-параметры гладкие, `|S11|` разумный).
 - [ ] Проверить `|S21|` резонатора (цель −25…−35 дБ).
 - [ ] Optimetrics-свип при фиксированном `L_thru`.
 - [ ] Автоэкспорт `.s2p`.
 - [ ] Wideband Debye для FR4.
+- [ ] `deembed = L_thru/2` для портов RES (если нужно сместить reference plane).
 
 ## Последнее изменение
-- Что: v3.5.6 — `PEC_Wall_{name}` вычитается из `GND_BOT` до `unite` с линией. Wave Port по-прежнему на грани PEC через `AssignWavePort(Faces)`.
-- Где: `hfss_trl_kit.py`.
-- Зачем: устранение пересечения PEC-стенки и `GND_BOT` в области `z ∈ [−t_cu, 0]` (PEC-стенка и земля занимают один и тот же объём).
+- Что: v3.6.1 — `port_gap = 0` (PEC-cap вплотную к порту), `sizes=["port_h", "port_w"]` (исправлен порядок Z/X), порты полностью параметризованы через HFSS-выражения.
+- Где: `hfss_trl_kit.py`, `DEV_LOG.md` (DL-55, DL-56, DL-57).
+- Зачем: устранение высших мод (порт 6.8 × 2.79 < λ₀/2), полная параметризация портов (двигаются с моделью), корректное возбуждение моды (PEC-стенка вплотную к порту).
 
 # === memory_bank.md ===
