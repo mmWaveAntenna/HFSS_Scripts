@@ -1,3 +1,4 @@
+```markdown
 # DEV_LOG.md
 
 **Проект:** TRL-набор на FR4 для HFSS 2025 (PyAEDT)
@@ -56,12 +57,21 @@
 | DL-44 | A | Избыточный объект `Pad` на сигнальных линиях |
 | DL-45 | A | `Solid ID assignment finds tets without bodies` — некорректный порядок вычитаний коаксиала |
 | DL-46 | A | Ренормализация `renormalize=True` на портах коаксиала искажала импеданс |
+| DL-47 | A | `Both endpoints of port lines must lie on the port` — рассогласование HFSS-выражения и Python-числа |
+| DL-48 | D | `Invalid solution type` — ложная ошибка после провала `is_microstrip` |
+| DL-49 | D | `is_microstrip=True` не работает в PyAEDT 1.8.0 при объединённой земле |
+| DL-50 | A | Удаление разъёмов и переход к чистым микрополосковым портам (v3.x) |
+| DL-51 | A/D | `Both endpoints` — порт не на границе Open Region (padding ±Y ≠ 0) |
+| DL-52 | D | `Object3d` has no attribute `face_centers`, `Modeler3D` — `get_face_ids` (PyAEDT 1.8.0) |
+| DL-53 | D | `a geometry selection is required for assignment` — `wave_port(assignment=face_id)` |
+| DL-54 | D | `GetFaceIDs` / `GetFaceCenter` — парсинг форматов в AEDT 2025.1 |
 
 ---
 
 ## Раздел A. Физика, топология, параметризация
 
 ### DL-16. GND должен повторять контур подложки — не bbox
+- **Когда:** замечание пользователя после v1.5.0 / v1.6.2.
 - **Симптом:** GND — один прямоугольник по bbox; подложка — ступенчатый union. Фольга торчит за контуром платы.
 - **Первопричина:** bbox-GND выбран для простоты, но не соответствует реальной PCB.
 - **Исправление:** GND — union прямоугольников, совпадающих с подложкой + мостики.
@@ -151,9 +161,9 @@
 
 ### DL-41. Параметр `pitch_trl` перестал работать из-за захардкоженных `x_*_val`
 - **Симптом:** При изменении `pitch_trl` в `Design Properties` линии и подложки сдвигались, а разъемы (порты, стенки, TopPad) оставались на месте.
-- **Первопричина:** При исправлении DL-39 (Parasolid Error) ассистент передал в `create_box` для `TopPad` и в `create_coax_and_port` числовые значения (`x_thru_val`, `x_line_val` и т.д.) вместо HFSS-выражений (`"x_thru"`, `"x_line"`).
-- **Исправление (v2.5.2 / v2.5.4):** В функцию `draw_coax_and_port` добавлен аргумент `x_expr` (строка HFSS-выражения) для геометрии и `x_num` (число Python) для `integration_line` порта. В `create_box` для `TopPad` используется `x_expr`.
-- **Урок:** При передаче координат в `create_box` / `create_cylinder` / `create_rectangle` нужно передавать **строку-выражение** HFSS, если требуется параметризация. Python-числа передавать только в API, которое требует `float` (`integration_line`).
+- **Первопричина:** При исправлении DL-39 (Parasolid Error) ассистент передал в `create_box` для `TopPad` и в `create_coax_and_port` числовые значения вместо HFSS-выражений.
+- **Исправление (v2.5.2 / v2.5.4):** В функцию `draw_coax_and_port` добавлен аргумент `x_expr` (строка HFSS-выражения) для геометрии и `x_num` (число Python) для `integration_line` порта.
+- **Урок:** При передаче координат в `create_box` / `create_cylinder` / `create_rectangle` нужно передавать **строку-выражение** HFSS, если требуется параметризация. Python-числа передавать только в API, которое требует `float`.
 
 ### DL-42. Параметр `f0_GHz` перестал работать из-за захардкоженных `L_line_val`, `r_mean_val`
 - **Симптом:** При изменении `f0_GHz` в `Design Properties` менялись только `L_thru` и `L_coax`. `L_line`, `r_mean`, `r_out`, `r_in`, `r_tab_in`, `r_tab_out`, `y_top_res` оставались неизменными.
@@ -184,7 +194,52 @@
 - **Когда:** v2.6.0.
 - **Симптом:** Порты коаксиала с `renormalize=True` принудительно нормировали импеданс к 50 Ом, искажая физическую картину перехода.
 - **Исправление (v2.6.1):** `renormalize=False`. HFSS использует характеристический импеданс самой линии (Zpi).
-- **Урок:** Для коаксиальных портов использовать `renormalize=False`, чтобы сохранить физический импеданс перехода. Нормировку к 50 Ом применять только для стандартных линий по спецификации.
+- **Урок:** Для коаксиальных портов использовать `renormalize=False`, чтобы сохранить физический импеданс перехода.
+
+### DL-47. `Both endpoints of port lines must lie on the port` — рассогласование HFSS-выражения и Python-числа
+- **Когда:** v3.4.0, первый вызов `create_port_and_wall` (`P_THRU_1`).
+- **Симптом:**
+  ```
+  [error] port 'p_thru_1': both endpoints of port lines must lie on the port.
+  IntLine: Start=['-25.0mm', '-5.0mm', '0.93mm'], End=['-25.0mm', '-5.0mm', '0.0mm']
+  ```
+  Лист порта создан по HFSS-выражению `origin=["(x_thru) - port_w/2", "-L_thru/2", "0mm"]`, а `integration_line` передавался как Python-число `-5.0`.
+- **Первопричина:** HFSS-парсер вычислял `-L_thru/2` в `origin` с внутренней точностью, отличной от Python-числа `-L_thru_val/2 = -5.0`. Разница в последних знаках приводила к тому, что точка `(-25, -5, 0.93)` оказывалась «чуть вне» плоскости порта.
+- **Исправление (v3.4.1):** Все координаты листа порта формируются через `"{:.6f}mm".format(value)` — те же Python-числа `x0`, `y0`, `z0`, что идут в `integration_line`. Никаких HFSS-выражений в `origin` листа.
+- **Урок:** Для листа порта и его `integration_line` использовать **одни и те же числовые значения**. Не смешивать HFSS-выражения и Python-числа.
+
+### DL-50. Удаление разъёмов и переход к чистым микрополосковым портам (v3.x)
+- **Когда:** v3.0.0 — запрос пользователя: «Убери рисование разъемов. На концах полосковых линий микрополосковые порты расставь».
+- **Симптом:** Модель с разъёмами — источник ошибок сетки (`Solid ID assignment`, `intersect`) и лишних граничных условий.
+- **Первопричина:** Разъёмы нужны только для сравнения «симуляция–измерение», но не для расчёта S-параметров калибровочных мер.
+- **Исправление (v3.0.0):** Убраны все объекты разъёмов. Порты — прямоугольные листы на краях линий. Воздушное окружение — Open Region. Padding = 0 на сторонах портов (+Y, -Y) и земли (-Z).
+- **Урок:** При разработке калибровочных мер и параметрических исследований — начинать с идеальных микрополосковых портов, а разъёмы добавлять только для верификации.
+
+### DL-51. `Both endpoints of port lines must lie on the port` — порт не на границе Open Region
+- **Когда:** v3.4.1, первый вызов `create_port_and_wall("THRU_1", …)`.
+- **Симптом:**
+  ```
+  [error] port 'p_thru_1': both endpoints of port lines must lie on the port.
+  IntLine: Start=['-25.0mm', '-5.0mm', '0.93mm'], End=['-25.0mm', '-5.0mm', '0.0mm']
+  ```
+  При этом `origin` листа порта и `integration_line` сформированы из **одинаковых** Python-чисел (`-5.0` в обоих местах). DL-47 здесь ни при чём.
+- **Первопричина:** `create_region` задан с `pad_value=["15mm", "15mm", "0.5mm", "0.5mm", "15mm", "0mm"]`. Padding `0.5 мм` на `±Y` сдвигает границу Region на `y = ±(L/2 + 0.5)`, а лист порта создан на `y = ±L/2`. В HFSS `Wave Port` **обязан лежать на внешней границе** 3D-задачи (мануал HFSS 2025 R2, раздел «Wave Ports»: «A wave port is restricted to reside at an external boundary of a 3D problem»). Порт «внутри» объёма → HFSS отвергает интеграционную линию, даже если она геометрически лежит на листе.
+- **Исправление:**
+  1. **Обнулить padding на сторонах портов:** `pad_value=["15mm", "15mm", "0mm", "0mm", "15mm", "0mm"]` — плоскость порта совпадает с границей Region.
+  2. **Сдвинуть PEC-стенки внутрь Region** (иначе окажутся снаружи объёма):
+     ```python
+     if direction > 0:
+         wall_y_origin = y0 - 2.0 * t_cu_mm - 0.1   # внутрь (в -Y)
+     else:
+         wall_y_origin = y0 + 0.1                    # внутрь (в +Y)
+     ```
+  3. Координаты листа и `integration_line` оставить одинаковыми (Python-числа).
+- **Влияние:** порты создаются без ошибок; PEC-рамки внутри Region выполняют роль задней стенки.
+- **Урок:**
+  1. **`Wave Port` в HFSS должен лежать на внешней границе** модели (Region / AirBox / PML). Порт «внутри» объёма невозможен.
+  2. **При использовании Open Region padding на сторонах портов должен быть 0.**
+  3. **PEC-стенки для портов** — располагать **внутрь** Region (на `+0.1 мм` от порта вглубь).
+  4. **Симптом `Both endpoints` имеет два разных источника:** (а) рассогласование координат листа и `integration_line` (DL-47), (б) порт не на границе Region (DL-51).
 
 ---
 
@@ -249,6 +304,54 @@
 - **Исправление:** Все сложные формулы предвычислены в Python и переданы в HFSS как готовые числа.
 - **Урок:** при использовании `create_cylinder`, `create_circle`, `create_box` в циклах с переменными — передавать числовые значения.
 
+### DL-48. `Invalid solution type` — ложная ошибка после провала `is_microstrip` (try/except fallback)
+- **Когда:** v3.4.0, fallback-вызов `wave_port` без `is_microstrip=True`.
+- **Симптом:**
+  ```
+  [warn] is_microstrip failed: Failed to create boundary Wave Port P_THRU_1, using explicit integration_line
+  [error] Invalid solution type. on wave_port
+  ```
+  Хотя `solution_type="DrivenModal"` задан в `Hfss(...)`.
+- **Первопричина:** В PyAEDT 1.8.0 после **неудачной** попытки `wave_port(is_microstrip=True)` дизайн остаётся в некорректном состоянии. Повторный `wave_port` падает с **обманчивой** ошибкой `Invalid solution type`.
+- **Исправление (v3.4.1):** Убрать `is_microstrip=True` и `try/except fallback` полностью. Один чистый вызов `wave_port`.
+- **Урок:** В PyAEDT 1.8.0 **не** использовать `try/except` вокруг `wave_port`.
+
+### DL-49. `is_microstrip=True` не работает в PyAEDT 1.8.0 при объединённой земле
+- **Когда:** v3.4.0, `wave_port(..., is_microstrip=True, reference="GND_BOT")`.
+- **Симптом:** `Failed to create boundary Wave Port P_THRU_1`.
+- **Первопричина:** В модели `GND_BOT` объединён в один объект с `GND_LINE`, `GND_OPEN`, `GND_RES`, `GND_Bridge_*`. PyAEDT при `is_microstrip=True` ищет **плоскость земли** под портом, но находит объединённый объект сложной формы.
+- **Исправление (v3.4.1):** Отказаться от `is_microstrip=True`. Использовать явную `integration_line`.
+- **Урок:** `is_microstrip=True` в PyAEDT 1.8.0 работает только для простой геометрии.
+
+### DL-52. `Object3d` has no attribute `face_centers`, `Modeler3D` — `get_face_ids` (PyAEDT 1.8.0)
+- **Когда:** v3.5.2, попытка найти грань через `obj.faces` / `obj.face_centers` или `hfss.modeler.get_face_ids` / `get_face_center`.
+- **Симптом:**
+  ```
+  [warn] obj.faces/.face_centers failed: 'Object3d' object has no attribute 'face_centers'
+  [warn] modeler.get_face_ids failed: 'Modeler3D' object has no attribute 'get_face_ids'
+  ```
+- **Первопричина:** В PyAEDT 1.8.0 методы `face_centers` и `get_face_ids` отсутствуют. Есть только `oeditor.GetFaceIDs` / `GetFaceCenter` (низкоуровневый API).
+- **Исправление (v3.5.3):** Использовать `hfss.modeler.oeditor.GetFaceIDs(obj_name)` → список face ID (строки); `hfss.modeler.oeditor.GetFaceCenter(fid)` → центр грани.
+- **Урок:** В PyAEDT 1.8.0 для работы с гранями — только `oeditor.*`. Публичные `modeler.get_face_ids` / `face_centers` появились позже.
+
+### DL-53. `a geometry selection is required for assignment` — `wave_port(assignment=face_id)`
+- **Когда:** v3.5.4, `hfss.wave_port(assignment=face_id, ...)` где `face_id = "771"` (строка face ID).
+- **Симптом:**
+  ```
+  [error] port 'p_thru_1': a geometry selection is required for assignment.
+  props = {'Objects': ['771'], ...}
+  ```
+- **Первопричина:** `hfss.wave_port()` в PyAEDT 1.8.0 кладёт `assignment` в `props['Objects']`. Для face ID это неверно: HFSS ожидает `Objects:=[]` и `Faces:=[771]`. PyAEDT 1.8.0 не поддерживает назначение порта на грань через `wave_port()`.
+- **Исправление (v3.5.5):** Использовать низкоуровневый `hfss.oboundary.AssignWavePort(props)`, где `props` содержит `Objects:=[], Faces:=[771], NAME:P_xxx`. Fallback — `hfss.modeler.oeditor.AssignWavePort(props)`.
+- **Урок:** В PyAEDT 1.8.0 `wave_port()` предназначен только для листов (`Objects`). Для граней — только `AssignWavePort(props)` с массивом `Faces`. Формат `props` — список `["NAME:xxx", "Objects:=", [], "Faces:=", [771], "NumModes:=", 1, ...]`.
+
+### DL-54. `GetFaceIDs` / `GetFaceCenter` — парсинг форматов в AEDT 2025.1
+- **Когда:** v3.5.3, первая попытка использовать `GetFaceCenter`.
+- **Симптом:** тихое падение — функция возвращала `None` на всех гранях, `RuntimeError: Не найдена грань`.
+- **Первопричина:** `GetFaceCenter` может возвращать координаты в разных форматах: `str` (`"(-25.0, -5.0, 0.93)mm"`), `list[float]`, `tuple[float]`. Единицы — СИ (м) или `model_units` (мм). Без парсинга и авто-конверсии `if abs(y) < 1.0: y *= 1000` — поиск не работает.
+- **Исправление (v3.5.4):** Функция `_parse_coord(v)` — универсальный парсер (str/list/tuple/float). Функция `_get_face_y(obj, fid)` — пробует `GetFaceCenter`, затем `GetFaceVertexPositions` (среднее Y по вершинам). Авто-конверсия единиц. Диагностический `print` для каждой грани.
+- **Урок:** `oeditor.GetFaceCenter` в AEDT 2025.1 — возвращает координаты в формате, зависящем от версии и `model_units`. Всегда парсить и проверять единицы (СИ vs `model_units`). Для надёжности — fallback через `GetFaceVertexPositions` и среднее по вершинам.
+
 ---
 
 ## Раздел E. Процесс и окружение
@@ -259,9 +362,9 @@
 
 ### DL-43. Нарушение §2.6 (краткость) и §5.1 (минимальный дифф) при правках
 - **Симптом:** Пользователь указал: «Опять забыл правила» после того, как ассистент выдал полный файл вместо минимального фрагмента.
-- **Первопричина:** При запросе «проверь не захардкодил еще что-нибудь» ассистент выдал полный файл вместо **только изменённых фрагментов** (согласно §5.1) и **краткого резюме** (согласно §2.6).
+- **Первопричина:** При запросе «проверь не захардкодил еще что-нибудь» ассистент выдал полный файл вместо **только изменённых фрагментов** (согласно §5.1).
 - **Исправление:** В ответ на просьбу проверить/исправить что-то — выдавать **минимальный дифф** и **краткое резюме**. Полный файл выдавать только по явному запросу `\code`.
-- **Урок:** Правила §2.6 (краткость) и §5.1 (минимальный дифф) — обязательны. Даже при масштабных изменениях, если пользователь не запросил полный файл, выдавать только фрагменты.
+- **Урок:** Правила §2.6 (краткость) и §5.1 (минимальный дифф) — обязательны.
 
 ---
 
@@ -284,8 +387,13 @@
 
 ### DL-40 (ОТОЗВАН v2.4.1). `create_pec_cap=True` в `wave_port`
 - Что было предложено: использовать встроенный параметр `create_pec_cap=True` для автоматической PEC-крышки.
-- Почему отозвано: в PyAEDT 1.8/1.10 этот параметр создаёт дублирующий лист `PortSheet_..._1` и крышку, полностью перекрывающую диэлектрик. Это приводит к ошибкам `intersect` с `TopPad`.
-- Актуальная замена (v2.5.1): ручная PEC-крышка (`create_cylinder` с материалом `pec`), из которой вычитается диэлектрик.
+- Почему отозвано: в PyAEDT 1.8/1.10 этот параметр создаёт дублирующий лист `PortSheet_..._1` и крышку, полностью перекрывающую диэлектрик.
+- Актуальная замена (v2.5.1): ручная PEC-крышка (`create_cylinder` с материалом `pec`).
+
+### DL-49 (ОТОЗВАН v3.4.0). `is_microstrip=True` для микрополосковых портов
+- Что было предложено: использовать `is_microstrip=True, reference="GND_BOT"` для автоматического построения интеграционной линии.
+- Почему отозвано: в PyAEDT 1.8.0 при объединённой земле — `Both endpoints of port lines must lie on the port`. Плюс `create_port_sheet=True` дублирует ручной лист.
+- Актуальная замена (v3.4.1): явная `integration_line` без `is_microstrip` и без `reference`.
 
 ---
 
@@ -312,5 +420,11 @@
 | 2.6 | DL-41 (pitch hardcoded), DL-42 (f0_GHz hardcoded), DL-43 (нарушение правил краткости) |
 | 2.7 | DL-44 (удаление объекта Pad, прямое объединение линий и пинов) |
 | 2.8 | DL-45 (порядок вычитаний коаксиала), DL-46 (renormalize=False на портах) |
+| 2.9 | DL-47 (рассогласование HFSS-выражения и Python-числа в портах), DL-48 (Invalid solution type fallback), DL-49 (is_microstrip=True отозван), DL-50 (удаление разъёмов, переход к чистым микрополосковым портам) |
+| 3.0 | DL-51 (`Both endpoints` — порт не на границе Open Region, padding ±Y ≠ 0) |
+| 3.1 | DL-52 (`Object3d.face_centers` / `Modeler3D.get_face_ids` отсутствуют в PyAEDT 1.8.0) |
+| 3.2 | DL-53 (`a geometry selection is required` — `wave_port(assignment=face_id)` кладёт в Objects, нужно Faces через AssignWavePort) |
+| 3.3 | DL-54 (`GetFaceCenter` формат/единицы — парсинг str/list, авто-конверсия СИ↔мм, fallback через GetFaceVertexPositions) |
 
 # === DEV_LOG.md ===
+```

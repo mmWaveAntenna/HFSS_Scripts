@@ -1,8 +1,9 @@
+
 <div align="center">
 
 # TRL Kit + кольцевой резонатор на FR4 для HFSS 2025
 
-**Версия 2.2.9**
+**Версия 3.5.6**
 
 ![HFSS](https://img.shields.io/badge/HFSS-2025.1-blue)
 ![PyAEDT](https://img.shields.io/badge/PyAEDT-1.8.0%20%2F%201.10-green)
@@ -22,23 +23,42 @@
 
 - **THRU** — линия 50 Ом длиной $L_\text{thru}$;
 - **LINE** — линия длиной $L_\text{thru} + \Delta L$, где $\Delta L = \lambda_g/4$ на $f_0$;
-- **OPEN_A / OPEN_B** — две разомкнутые линии длиной $L_\text{thru}/2$ каждая, коллинеарны, порты с противоположных концов;
-- **RES** — кольцевой резонатор ($n=1$) с T-лапками и фидерами длиной $L_\text{thru}/2$ для слабой связи ($|S_{21}| \approx -25\ldots-35$ дБ);
-- **Модели разъемов G14SFB001 (1.85 мм)** — физическая внутренняя часть коаксиала, металлическая стенка и лапки, сидящие на посадочных местах.
+- **OPEN_A / OPEN_B** — две разомкнутые линии длиной $L_\text{thru}/2$, коллинеарны, порты с противоположных концов;
+- **RES** — кольцевой резонатор ($n=1$) с T-лапками и фидерами длиной $L_\text{thru}/2$ для слабой связи ($|S_{21}| \approx -25\ldots-35$ дБ).
 
-Все структуры — на одной подложке FR4. Подложка и нижняя земля повторяют реальную плату (union ступенчатых блоков с мостиками), а не абстрактный bounding box.
+Все структуры — на одной подложке FR4. Подложка и нижняя земля повторяют реальную плату (union ступенчатых блоков с мостиками), а не абстрактный bounding box. Модель **не содержит физических разъёмов** — используются идеальные микрополосковые Wave Ports на гранях PEC-стенок.
 
 ### Возможности
 
-- **Полная параметризация через переменные HFSS** (`Design Properties`): $\varepsilon_\text{eff}$, $\Delta L$, $L_\text{line}$, $L_\text{ref}$, $L_\text{feed}$, $r_\text{mean}$, $r_\text{out}$, $r_\text{in}$, $r_\text{tab\_in}$, $r_\text{tab\_out}$, $y_\text{top\_res}$, габариты подложки — всё пересчитывается при изменении $W$, $h$, $\varepsilon_r$, $f_0$.
+- **Полная параметризация** через переменные HFSS (`Design Properties`): $L_\text{line}$, $r_\text{mean}$, $r_\text{out}$, $r_\text{in}$, $r_\text{tab\_in}$, $r_\text{tab\_out}$, $y_\text{top\_res}$, координаты структур — всё пересчитывается при изменении $W$, $h$, $\varepsilon_r$, $f_0$.
 - **TRL-длины связаны с $L_\text{thru}$** — обеспечивает корректный сдвиг reference plane.
-- **Физическая модель перехода на коаксиал** — пин разъема смещен по Z так, чтобы пересекаться с микрополоском на 8 мкм, обеспечивая гальваническую связь.
-- **Топология TopPad**: на верхнем слое нет сплошной заливки земли. Создаются локальные площадки (длиной 5.58 мм) под лапки разъемов.
-- **Монтажные пазы**: овальные (obround) пазы (2.0 × 1.4 мм) с центром на расстоянии 3.0 мм от края платы, ориентированы вдоль оси Y для компенсации технологических погрешностей.
-- **Технологический зазор `gap_foil`** (0.2 мм) — вся медь (линии, пады, TopPad) отступает от края платы.
-- **8 Wave Ports** на торцах коаксиалов (строго симметрично).
-- **Частотная развёртка** 1–6 ГГц (LinearCount, 101 точка).
-- **Совместимость с PyAEDT 1.8.0 / 1.10.dev0 / AEDT 2025.1**.
+- **Wave Port на грани PEC-стенки** — назначение напрямую на грань 3D-объекта через низкоуровневый `AssignWavePort(Faces)` (PyAEDT 1.8.0 не поддерживает через `wave_port`).
+- **PEC-стенка с нахлёстом** — линия утоплена в PEC-стенку на 5 мкм, затем `unite` — единый объект, гальванический контакт.
+- **PEC-стенка вычитается из GND_BOT** — устраняет пересечение в области $z \in [-t_\text{cu}, 0]$.
+- **Open Region** — padding 15 мм на $\pm X$, $+Z$; 0.5 мм на $\pm Y$ (PEC-стенка внутри Region); 0 на $-Z$ (земля на границе).
+- **Совместимость с PyAEDT 1.8.0 / 1.10 / AEDT 2025.1**.
+
+---
+
+## Что такое TRL и зачем это нужно
+
+**TRL** (**T**hru — **R**eflect — **L**ine) — метод калибровки векторного анализатора цепей (VNA), избавляющий от паразитных параметров измерительного тракта (кабелей, разъёмов, тестовых фикстур).
+
+### Суть метода
+
+Вместо точных (и дорогих) мер «Open / Short / Load» используется три простых стандарта:
+
+1. **Thru** — прямая линия передачи, соединяющая два порта. Опорная плоскость.
+2. **Reflect** — разомкнутая (Open) или короткозамкнутая (Short) линия с известным коэффициентом отражения.
+3. **Line** — отрезок линии с электрической длиной, отличающейся от Thru на четверть волны ($\lambda/4$). Фазовый сдвиг для математического решения.
+
+### Преимущества
+
+- **Высокая точность** на СВЧ/КВЧ — не требуется точная нагрузка 50 Ом.
+- **Сдвиг Reference Plane** — перенос плоскости измерения с торца разъёма на любое расстояние внутри линии (например, к центру резонатора).
+- **Учёт дисперсии и потерь** в фикстурах.
+
+В проекте TRL-стандарты на одной плате; фидеры резонатора имеют длину $L_\text{thru}/2$, что позволяет использовать `deembed` и автоматически сдвинуть Reference Plane на плоскость T-лапок (TAB).
 
 ---
 
@@ -47,8 +67,8 @@
 ### Требования
 
 - Ansys Electronics Desktop 2025 R1 (HFSS).
-- Python 3.10+ и PyAEDT 1.8.0+ — для запуска из внешнего интерпретатора.
-- Либо встроенный CPython AEDT — для `Run PyAEDT Script`.
+- Python 3.10+ и PyAEDT 1.8.0+ (для запуска из внешнего интерпретатора).
+- Либо встроенный CPython AEDT (для `Automation → Run PyAEDT Script`).
 
 ### Установка PyAEDT
 
@@ -68,42 +88,59 @@ pip install "pyaedt>=1.8.0"
 python hfss_trl_kit.py
 ```
 
-Скрипт запустит новую сессию AEDT, создаст проект `TRL_Calibration_FR4_Param.aedt` и дизайн `TRL_Kit`, построит все структуры, назначит 8 портов, добавит setup и sweep, сохранит проект.
+Скрипт запустит новую сессию AEDT, создаст проект `TRL_Calibration_FR4_Param.aedt` (дизайн `TRL_Kit`), построит все структуры, назначит 8 Wave Ports и сохранит проект.
 
 ### Вариант 2 — внутри AEDT
 
 1. Открыть AEDT 2025 R1.
-2. **`Automation → Run PyAEDT Script`** (либо `Tools → Toolkit → PersonalLib → Run PyAEDT Script`).
+2. **`Automation → Run PyAEDT Script`**.
 3. Выбрать `hfss_trl_kit.py`.
 
-> Не использовать `Tools → Run Script` — там IronPython 2.7 без PyAEDT → `Import exception: no module`.
+> **Внимание:** Не используйте `Tools → Run Script`. Этот механизм запускает IronPython 2.7 без PyAEDT → `Import exception`.
 
 ### После создания
 
 1. Открыть проект, проверить `Modeler → Design Properties`.
-2. `Analyze All`.
-3. Экспорт S-параметров: `Results → Solution Data → Export → Touchstone` или `Tools → Calibration Wizard` (Type: TRL).
+2. `Modeler → Validation Check` (не должно быть ошибок).
+3. `Analyze All`.
+4. Экспорт S-параметров: `Results → Solution Data → Export → Touchstone` или `Tools → Calibration Wizard` (Type: TRL).
 
 ---
 
-## TRL: связь длин и reference plane
+## TRL: связь длин и Reference Plane
 
-Корректная TRL-калибровка и сдвиг reference plane требуют, чтобы длины всех стандартов были производными от $L_\text{thru}$:
+Корректная TRL-калибровка и сдвиг опорной плоскости требуют, чтобы длины всех стандартов были производными от $L_\text{thru}$:
 
 | Структура | Длина | Назначение |
 |---|---|---|
-| **THRU** | $L_\text{thru}$ | базовая линия; reference plane после калибровки — в её центре (y=0) |
+| **THRU** | $L_\text{thru}$ | Базовая линия; reference plane в её центре ($y=0$) |
 | **LINE** | $L_\text{thru} + \Delta L$ | $\Delta L = \lambda_g/4$ — четвертьволновый шаг для TRL |
-| **OPEN_A** | $L_\text{thru}/2$ | плечо P1 → центр; порт в плоскости LINE-порта (y = $-L_\text{line}/2$) |
-| **OPEN_B** | $L_\text{thru}/2$ | плечо P2 → центр; порт в плоскости LINE-порта (y = $+L_\text{line}/2$) |
-| **Фидеры RES** | $L_\text{thru}/2$ | de-embedding сдвигает reference plane резонатора на плоскость TAB |
+| **OPEN_A / OPEN_B** | $L_\text{thru}/2$ | Плечи P1/P2 → центр; порты в плоскости LINE-портов |
+| **Фидеры RES** | $L_\text{thru}/2$ | De-embedding сдвигает reference plane на плоскость TAB |
 
-Зазор между открытыми концами OPEN_A и OPEN_B равен $L_\text{line} - L_\text{thru} = \Delta L \approx 17.1$ мм (при $f_0 = 2.4$ ГГц) — достаточно для независимых REFLECT-стандартов без дополнительного `gap_open`.
+Зазор между открытыми концами OPEN_A и OPEN_B равен $L_\text{line} - L_\text{thru} = \Delta L \approx 17.1$ мм (при $f_0 = 2.4$ ГГц).
 
-### Сдвиг reference plane
+Для портов резонатора (`P1_RES`, `P2_RES`) предусмотрен параметр **`deembed = L_thru/2`** — сдвигает reference plane на плоскость T-лапок без постобработки.
 
-- **После TRL-калибровки** reference plane совпадает с плоскостями портов (`±L_\text{thru}/2` для THRU, `±L_\text{line}/2` для LINE, `±L_\text{line}/2` для OPEN-портов). Сдвиг на $L_\text{thru}/2$ приводит к центру THRU (y=0).
-- **Для резонатора** `deembed = L_\text{thru}/2` при создании портов `P1_RES` / `P2_RES` автоматически сдвигает reference plane на плоскость TAB.
+### Физические формулы (HFSS-выражения)
+
+Эффективная диэлектрическая проницаемость (Hammerstad–Jensen):
+
+$$
+\varepsilon_\text{eff} = \frac{\varepsilon_r + 1}{2} + \frac{\varepsilon_r - 1}{2\sqrt{1 + 12\,h/W}}
+$$
+
+Четвертьволновый шаг:
+
+$$
+\Delta L = \frac{\lambda_g}{4} = \frac{75\ \text{мм}}{f_{0,\text{ГГц}}\sqrt{\varepsilon_\text{eff}}}
+$$
+
+Средний радиус кольцевого резонатора ($n=1$):
+
+$$
+r_\text{mean} = \frac{300\ \text{мм}}{2\pi f_{0,\text{ГГц}}\sqrt{\varepsilon_\text{ring}}}
+$$
 
 ---
 
@@ -113,70 +150,49 @@ python hfss_trl_kit.py
 
 | Параметр | Значение | Комментарий |
 |---|---|---|
-| $h$ | 1.6 мм | FR4 |
-| $W$ | 3.0 мм | 50 Ом |
+| $h$ | 0.93 мм | FR4 |
+| $W$ | 1.7 мм | 50 Ом на 10 ГГц |
 | $t_\text{cu}$ | 0.035 мм | 1 oz |
 | $\varepsilon_r$, $\tan\delta$ | 4.4, 0.02 | FR4 |
+| $f_0$ | 10 ГГц | |
 | $L_\text{thru}$ | 10 мм | |
 | $L_\text{ref}$ | $L_\text{thru}/2$ = 5 мм | вычисляется |
 | $L_\text{feed}$ | $L_\text{thru}/2$ = 5 мм | вычисляется |
-| $f_0$ | 2.4 ГГц | |
-| $W_\text{ring}$ | 2.0 мм | радиальная толщина кольца |
-| $R_\text{tab}$ | 2.0 мм | радиальная толщина TAB |
-| `gap_couple` | 0.3 мм | зазор резонатор–TAB |
-| `conn_pin_offset` | 4.24 мм | от края ПП до штыря |
-| `conn_ins_depth` | 5.08 мм | глубина посадочного места |
-| `pad_size_y` | 5.58 мм | длина земляной площадки TopPad |
-| `pitch_trl` | 45 мм | шаг между TRL |
-| `pitch_res` | 35 мм | шаг от OPEN до резонатора |
+| $W_\text{ring}$ | 0.4 мм | радиальная толщина кольца |
+| $R_\text{tab}$ | 0.4 мм | радиальная толщина TAB |
+| $W_\text{tab}$ | 1.7 мм | X-ширина TAB |
+| `gap_couple` | 0.2 мм | зазор резонатор–TAB |
+| `port_w` | 17 мм ($10W$) | ширина порта |
+| `port_h` | 7.44 мм ($8h$) | высота порта |
+| `pitch_trl` | 25 мм | шаг между TRL |
+| `pitch_res` | 25 мм | шаг от OPEN до резонатора |
 
-### Раскладка по X
+### Wave Ports на PEC-стенках
 
-| X | Структура | Порты |
+Каждый порт — это **грань PEC-стенки**, а не отдельный лист:
+
+1. **PEC-стенка** — сплошной box `pec` толщиной $t_\text{cu}$, снаружи торца линии.
+2. **Линия утоплена** в PEC на 5 мкм (`line_overlap = 0.005 мм`) — гарантия слияния.
+3. **`subtract`** PEC-стенки из `GND_BOT` (устранение пересечения в $z \in [-t_\text{cu}, 0]$).
+4. **`unite`** PEC-стенки с линией — единый объект.
+5. **Поиск грани** по Y-координате центра (`find_face_at_y`) через `oeditor.GetFaceIDs` + `GetFaceCenter`.
+6. **Назначение Wave Port** на грань через `hfss.oboundary.AssignWavePort(props)` с `Objects:=[], Faces:=[int(face_id)]`.
+7. **Integration line** от полоска ($z=h$) к земле ($z=0$), `renormalize=False`.
+
+### Open Region
+
+```python
+hfss.modeler.create_region(
+    pad_value=["15mm", "15mm", "0.5mm", "0.5mm", "15mm", "0mm"],
+    is_percentage=False, name="Region"
+)
+```
+
+| Направление | Padding | Причина |
 |---|---|---|
-| `-pitch_trl` | THRU | P1, P2, $y = \pm L_\text{thru}/2$ |
-| $0$ | LINE | P1, P2, $y = \pm L_\text{line}/2$ |
-| `+pitch_trl` | OPEN_A / OPEN_B | P1_OPEN_A, P1_OPEN_B (в плоскостях LINE) |
-| `+pitch_trl + pitch_res`| RES (кольцо + TAB + фидеры) | P1_RES, P2_RES, deembed $L_\text{thru}/2$ |
-
-### Физические формулы (выражения HFSS)
-
-$$
-\varepsilon_\text{eff} = \frac{\varepsilon_r + 1}{2} + \frac{\varepsilon_r - 1}{2\sqrt{1 + 12\,h/W}}
-$$
-
-$$
-\Delta L = \frac{\lambda_g}{4} = \frac{75\ \text{мм}}{f_{0,\text{ГГц}}\sqrt{\varepsilon_\text{eff}}}
-$$
-
-$$
-r_\text{mean} = \frac{300\ \text{мм}}{2\pi f_{0,\text{ГГц}}\sqrt{\varepsilon_\text{ring}}}
-\qquad (n=1)
-$$
-
-При $f_0 = 2.4$ ГГц, $W_\text{ring} = 2$ мм: $\varepsilon_\text{ring} \approx 3.35$, $r_\text{mean} \approx 10.9$ мм.
-
----
-
-## Интеграция с HFSS
-
-### Модель коаксиального разъема
-- **Коаксиал**: Диаметры пина `0.23 мм`, диэлектрика `0.75 мм`, оплетки `1.85 мм`.
-- **Z-смещение**: `z_coax = h + t_cu - 0.008mm + r_pin_coax`. Пин пересекает медь на 8 мкм.
-- **Стенка и лапки**: ширина 12.7 мм, высота стенки 9.53 мм, высота лапок 2.5 мм.
-
-### Wave Ports
-- **Sheets** — HFSS-выражения, следуют за геометрией.
-- **Integration line** — числовые координаты (float, мм).
-- **Deembed** для RES-портов — число $L_\text{thru}/2$ мм.
-
-### Граничные условия
-- **GND_BOT**: Perfect E (union прямоугольников).
-- **GND_TOP (TopPad)**: Perfect E (локальные площадки, без сплошной заливки).
-- **AirBox**: Radiation.
-
-### Порядок операций
-Металл → порты → setup → sweep.
+| $+X$, $-X$, $+Z$ | 15 мм | $\approx \lambda_0/2$ на 10 ГГц |
+| $+Y$, $-Y$ | 0.5 мм | место под PEC-стенку (внутри Region) |
+| $-Z$ | 0 мм | земля на границе Region |
 
 ---
 
@@ -184,54 +200,59 @@ $$
 
 ```
 .
-├── hfss_trl_kit.py           # единый генератор проекта
-├── memory_bank.md            # текущее состояние
-├── DEV_LOG.md                # журнал ошибок и уроков
-├── README.md
-└── Rules.md / role.md
+├── hfss_trl_kit.py           # единый скрипт-генератор проекта
+├── DEV_LOG.md                # журнал ошибок и уроков (DL-01 … DL-54)
+├── memory_bank.md            # сводка состояния проекта
+├── README.md                 # данный файл
+└── Rules.md / role.md        # правила работы и роль
 ```
 
-### `hfss_trl_kit.py`
+### Модули `hfss_trl_kit.py`
 
 | Блок | Содержание |
 |---|---|
-| 1 | Параметры (мм, ГГц) |
-| 2 | `Hfss`, материалы (FR4, PTFE) |
-| 3 | Переменные (сложные формулы предвычислены в Python) |
-| 4 | Подложка, нижняя земля, верхние площадки (TopPad), овальные пазы |
-| 5 | Металлизация: TRL, OPEN_A/B, кольцо, фидеры |
-| 6 | Модели разъемов (коаксиал, стенка, лапки) и порты |
-| 7 | Setup + Sweep |
-| 8 | Сохранение, диагностика |
+| 1 | Параметры (мм, ГГц, порты, PEC) |
+| 2 | Инициализация `Hfss`, материалы (FR4) |
+| 3 | Переменные HFSS (сложные формулы — Python-числа) |
+| 4 | Подложка и нижняя земля (union + мостики) |
+| 5 | Металлизация TRL и резонатора |
+| 6 | PEC-стенки + `unite` + `AssignWavePort(Faces)` |
+| 7 | Open Region |
+| 8 | Setup + Sweep |
 
 ---
 
-## Разработка
+## Разработка и совместимость
 
-### Совместимость PyAEDT 1.8.0 / 1.10 / AEDT 2025.1
+### Особенности PyAEDT 1.8.0 / 1.10
 
-| API | Устарело | Актуально |
-|---|---|---|
-| `Hfss(...)` | `projectname`, `designname` | `project`, `design` |
-| Новая сессия | `new_desktop_session` | `new_desktop` |
-| Примитивы | `position`, `dimensions` | `origin`, `sizes` |
-| Чтение переменной | `GetVariableValue` | `hfss.get_evaluated_value(name)` |
-| `integration_line` | строки-выражения | **числа** (float) |
-| Логические операции | ожидание нового имени | in-place на первом аргументе |
-| Строки в `origin` / `sizes` | Python-имена (`W_mm`) | HFSS-переменные (`W`, `pitch`); **без унарного `+`** |
+| Было | Стало |
+|---|---|
+| `projectname=...` | `project=...` |
+| `new_desktop_session=...` | `new_desktop=...` |
+| `position=..., dimensions=...` | `origin=..., sizes=...` |
+| `GetVariableValue` / `hfss[name]` | `hfss.get_evaluated_value(name)` |
+| `obj.face_centers` / `modeler.get_face_ids` | `hfss.modeler.oeditor.GetFaceIDs` / `GetFaceCenter` |
+| `wave_port(assignment=face_id)` | `hfss.oboundary.AssignWavePort(props)` с `Faces` |
 
-### Синтаксис
-Без `from __future__ import annotations`, без f-строк и аннотаций типов — для совместимости с IronPython 2.7.
+### Правила работы с HFSS API
+
+1. **Сложные формулы** (с `sqrt`, `pi`) вычисляются в Python и передаются как готовые числа. HFSS-парсер плохо справляется с длинными вложенными выражениями.
+2. **Логические операции** (`unite`, `intersect`, `subtract`) работают in-place на первом аргументе.
+3. **Строки в `origin`/`sizes`** — HFSS-выражения; любая переменная в них должна быть объявлена в HFSS (`hfss["name"] = ...`).
+4. **Унарный плюс** в начале HFSS-выражения запрещён (`"+L_thru/2"` → ошибка парсера).
+5. **Wave Port на грань** — только через `AssignWavePort(props)`. `hfss.wave_port()` для face ID кладёт его в `Objects`, что не работает (нужно `Faces`).
+6. **Поиск грани** — `oeditor.GetFaceIDs` + `GetFaceCenter` (с парсингом `str`/`list` и авто-конверсией СИ↔мм).
 
 ---
 
 ## Известные ограничения
 
-- **3D STEP-модель G14SFB001** отсутствует в открытом доступе, параметры взяты из PDF-чертежа.
-- **`deembed` RES-портов** — число. При изменении `L_thru` — перезапуск скрипта.
-- **`integration_line`** — числа, движутся за портом (DL-14).
-- **FR4 без дисперсии.** Для $f > 5$ ГГц — Wideband Debye.
-- **Кольцо — $n=1$.** Для других мод — пересчитать `r_mean`.
+- **`integration_line`** — числа. При изменении `pitch_trl`, `pitch_res`, `L_thru`, `L_line` или `y_top_res` в `Design Properties` порты **не сдвинутся** автоматически (перезапуск скрипта обязателен).
+- **`deembed`** — число. При изменении `L_thru` перезапуск обязателен.
+- **`GetFaceCenter`** — формат и единицы зависят от версии AEDT. Авто-конверсия покрывает типичные случаи; при экзотическом формате смотрите `[debug]` в логе.
+- **FR4 без дисперсии.** Для $f > 5$ ГГц рекомендуется Wideband Debye.
+- **Кольцо — $n=1$.** Для $n=2$ на 10 ГГц: $f_2 \approx 20$ ГГц, шире пик (ниже $Q$ из-за $\tan\delta$ FR4).
 
 ---
 
@@ -240,15 +261,19 @@ $$
 - [ ] Автоэкспорт `.s2p` после `Analyze`.
 - [ ] Optimetrics-свип при фиксированном `L_thru`.
 - [ ] Дисперсионная модель FR4 (Wideband Debye).
-- [ ] Автоматизация `Calibration Wizard` (если API позволяет).
-- [ ] Запрос STEP-модели G14SFB001 у производителя.
+- [ ] Автоматизация `Calibration Wizard` через PyAEDT (если API позволяет).
+- [ ] Опционально: ветка с физическими разъёмами (G14SFB001) для верификации «симуляция vs измерение».
 
 ---
 
 ## Лицензия
-MIT.
+
+MIT License.
 
 ## Ссылки
-- Hammerstad E., Jensen O. *Accurate Models for Microstrip CAD*, IEEE MTT-S, 1980.
-- Pozar D.M. *Microwave Engineering*, 4th ed., 2011.
-- Ansys. *PyAEDT Documentation*, v1.8.0.
+
+- Hammerstad E., Jensen O. *Accurate Models for Microstrip Computer-Aided Design*, IEEE MTT-S Int. Microwave Symp. Dig., 1980.
+- Pozar D.M. *Microwave Engineering*, 4th ed. — Wiley, 2011. §3.8 (microstrip), §4.5 (TRL).
+- Balanis C.A. *Antenna Theory: Analysis and Design*, 4th ed. — Wiley, 2016. §14.2.
+- Ansys. *HFSS User's Guide*, Release 2025 R1.
+- Ansys. *PyAEDT Documentation*, v1.8.0. <https://aedt.docs.pyansys.com/>
