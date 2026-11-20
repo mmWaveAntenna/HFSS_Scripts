@@ -4,10 +4,10 @@
 Изменения:
 * Исправлен порядок размеров в create_rectangle(orientation="XZ"):
   sizes=["port_h", "port_w"] (ZSize=port_h, XSize=port_w).
-  Раньше было ["port_w", "port_h"], из-за чего порт был повернут на 90°.
 * Порты полностью параметризованы (HFSS-выражения в sheet и IntLine).
 * Размер порта уменьшен до 4W × 3h (6.8 × 2.79 мм) — без высших мод.
-* PEC-cap (3D box pec) на 0.1 мм за портом, вычитается из GND_BOT.
+* PEC-cap (3D box pec) вплотную к порту (port_gap = 0.0 мм, DL-57),
+  вычитается из GND_BOT.
 * Wave Port на sheet через hfss.oboundary.AssignWavePort.
 """
 
@@ -48,7 +48,7 @@ gap_foil_mm   = 0.2
 # Размеры портов (HFSS-выражения)
 port_w_expr = "4*W"   # 6.8 мм
 port_h_expr = "3*h"   # 2.79 мм
-port_gap_mm = 0.1     # зазор PEC-cap от порта
+port_gap_mm = 0.0     # строго 0.0 мм: PEC-cap вплотную к порту (DL-57)
 
 # x_margin — на основе численного port_w (для габаритов подложки)
 port_w_mm = 4.0 * W_mm
@@ -203,7 +203,7 @@ hfss.modeler.unite([tabs_final, "FEED_TOP", "FEED_BOT"])
 # 6. Параметризованные Wave Ports (HFSS-выражения)
 # ================================================================
 def create_port(name, x_expr, y_expr, direction):
-    """Sheet-порт в XZ-plane + PEC-cap за ним.
+    """Sheet-порт в XZ-plane + PEC-cap вплотную за ним.
     sizes=["port_h", "port_w"] — порядок Z, X (исправлено)."""
     sheet = hfss.modeler.create_rectangle(
         orientation="XZ",
@@ -212,7 +212,7 @@ def create_port(name, x_expr, y_expr, direction):
         name="PortSheet_{}".format(name)
     )
 
-    # PEC-cap на 0.1 мм за портом
+    # PEC-cap вплотную за портом (port_gap = 0.0 мм)
     if direction < 0:
         cap_y = "({}) - port_gap - t_cap".format(y_expr)
     else:
@@ -311,7 +311,7 @@ sweep.props["RangeEnd"] = "15GHz"
 sweep.props["RangeCount"] = 141
 
 hfss.save_project()
-print("\nПроект сохранён (v3.6.1). Порты 6.8 × 2.79 мм, параметризованы.")
+print("\nПроект сохранён (v3.6.1). Порты 6.8 × 2.79 мм, port_gap = 0.0 мм.")
 
 
 # === hfss_trl_kit.py ===
